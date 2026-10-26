@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.egohtr-cache/
+runs/
+data/
+*.log
+*.npz
+*.vrs
+*.pt
+*.pth
+*.ckpt
+*.safetensors

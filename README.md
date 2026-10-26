@@ -88,7 +88,7 @@ Each run writes to the configured output directory:
 - `mpjpe_body25.csv`, `mpjpe_body25.txt`: per-joint error and mean in millimeters.
 - `manifest.json`: sequence/frame metadata, transform names and matrices, metric definition, and camera-frame caveat.
 
-The Viser viewer uses +Z as up and overlays predicted (red) and GT (blue) meshes in MoCap/ExoMC World after applying the stated camera-to-world chain. Viewer startup happens after artifacts are written. Use `--no-viewer` to skip it.
+The Viser viewer uses +Z as up and shows the predicted (red) and GT (blue) meshes in MoCap/ExoMC World, plus the 2nd Aria RGB camera pose and its RGB image frustum in orange. The camera and frustum use the same OpenCV axes as PromptHMR (+X right, +Y down, +Z forward); no extra axis flip is applied. Viewer startup happens after artifacts are written. Use `--no-viewer` to skip it.
 
 ## Reproducing the recorded frames
 

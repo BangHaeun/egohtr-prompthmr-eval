@@ -62,7 +62,7 @@ def main():
                         smplx_gender=np.asarray(smplx_gender),
                         vertices=gt_vertices, faces=gt_faces)
 
-    pred, pred_faces, _ = run_prompthmr(
+    pred, pred_faces, rgb_image = run_prompthmr(
         output_dir / "rgb.png", repo, cfg["model_folder"], cfg["yolo_weights"], smplx_folder,
         output_dir, cfg.get("device", "cuda"), float(cfg.get("detect_conf", .3)),
         int(cfg.get("image_size", 896)))
@@ -119,7 +119,16 @@ def main():
     print(f"Saved outputs: {output_dir}")
     if cfg.get("viewer", True) and not args.no_viewer:
         from .viewer import show_meshes
-        show_meshes(pred_vertices_exomc, gt_vertices, gt_faces, int(cfg.get("viewer_port", 8080)))
+        show_meshes(
+            pred_vertices_exomc,
+            gt_vertices,
+            gt_faces,
+            port=int(cfg.get("viewer_port", 8080)),
+            T_camera_to_exomc=T,
+            rgb_image=rgb_image,
+            camera_intrinsics=pred["cam_int"],
+            network_input_size=int(cfg.get("image_size", 896)),
+        )
 
 
 if __name__ == "__main__":

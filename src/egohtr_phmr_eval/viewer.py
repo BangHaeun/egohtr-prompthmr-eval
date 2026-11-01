@@ -51,9 +51,11 @@ def show_meshes(
             image = np.asarray(rgb_image)
             K = np.asarray(camera_intrinsics, dtype=np.float64).reshape(3, 3)
             height, width = image.shape[:2]
-            resize_scale = float(network_input_size) / max(width, height)
-            fx = K[0, 0] / resize_scale
-            fy = K[1, 1] / resize_scale
+            # K is calibrated for the full-resolution RGB image, not the
+            # resized PromptHMR network input. Do not scale focal length again.
+            fy = float(K[1, 1])
+            if not np.isfinite(fy) or fy <= 0:
+                raise ValueError(f"Invalid RGB focal length fy={fy}")
             fov_y = 2.0 * np.arctan(height / (2.0 * fy))
             server.scene.add_camera_frustum(
                 "/aria_2nd_rgb_camera_rgb",

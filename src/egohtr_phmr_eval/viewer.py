@@ -8,10 +8,11 @@ def show_meshes(
     gt_vertices,
     faces,
     port=8080,
-    T_camera_to_exomc=None,
+    T_camera_to_origin=None,
     rgb_image=None,
     camera_intrinsics=None,
     network_input_size=896,
+    world_frame_name="SLAM Origin",
 ):
     import viser
     from scipy.spatial.transform import Rotation
@@ -23,12 +24,13 @@ def show_meshes(
                                  color=(230, 80, 60), flat_shading=False)
     server.scene.add_mesh_simple("/ground_truth", vertices=np.asarray(gt_vertices), faces=faces,
                                  color=(60, 130, 235), flat_shading=False)
-    server.scene.add_frame("/exomc_origin", wxyz=(1, 0, 0, 0), position=(0, 0, 0), axes_length=0.4)
+    frame_slug = str(world_frame_name).lower().replace(" ", "_")
+    server.scene.add_frame(f"/{frame_slug}_origin", wxyz=(1, 0, 0, 0), position=(0, 0, 0), axes_length=0.4)
 
-    if T_camera_to_exomc is not None:
-        T_world_cv = np.asarray(T_camera_to_exomc, dtype=np.float64)
+    if T_camera_to_origin is not None:
+        T_world_cv = np.asarray(T_camera_to_origin, dtype=np.float64)
         if T_world_cv.shape != (4, 4):
-            raise ValueError(f"Expected a 4x4 camera-to-ExoMC transform, got {T_world_cv.shape}")
+            raise ValueError(f"Expected a 4x4 camera-to-{world_frame_name} transform, got {T_world_cv.shape}")
 
         # Viser camera frustums use the same OpenCV convention as PromptHMR:
         # +X right, +Y down, +Z forward. Do not add an axis flip here.

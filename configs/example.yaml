@@ -1,8 +1,8 @@
 dataset_root: ~/Datasets/EgoHTR
-sequence: exo-cliff-stones_s4_xhall_01
+sequence: exo-high-object_s4_xhall_01
+index: 2150
 timestamp_seconds: 71.6666666667
-index: null                 # set this instead of timestamp_seconds to select an exact frame
-output_dir: ./runs/exo-cliff-stones_k2150
+output_dir: ./runs/exo-high-object-k2150-final
 
 # Existing local PromptHMR checkout; the pipeline does not modify it.
 prompthmr_repo: ~/Codes/PromptHMR
@@ -12,13 +12,12 @@ smplx_model_folder: data/body_models/smplx
 device: cuda
 detect_conf: 0.3
 image_size: 896
+fit_max_iter: 120
+fit_pose_prior_weight: 1.0e-3
+fit_shape_prior_weight: 1.0e-4
 
 viewer: true
-viewer_port: 8080
+viewer_port: 8084
 
 # EgoHTR access is needed only if the selected sequence files are absent.
 huggingface_repo_id: null
-
-# Pipeline assumption: PromptHMR joints/mesh and this extrinsic use the 2nd RGB camera frame.
-# The NPZ key itself does not encode the sensor label; verify against RGB calibration provenance.
-camera_extrinsic_semantics: assumed_rgb_camera

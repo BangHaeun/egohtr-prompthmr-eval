@@ -1,113 +1,90 @@
-# EgoHTR–PromptHMR single-frame evaluation
+# EgoHTR–PromptHMR evaluation
 
-This repository wraps an existing local PromptHMR checkout. It does not copy or modify PromptHMR. Given an EgoHTR sequence and frame timestamp, one command extracts the 2nd Aria RGB image and original MoCap GT joints, runs PromptHMR, transforms its RGB-camera-frame prediction into MoCap World, computes BODY_25 MPJPE, and opens a Viser scene for visual comparison of the regenerated GT mesh and predicted mesh.
+This repository runs a single-frame EgoHTR–PromptHMR evaluation using SLAM Origin as the common coordinate frame. PromptHMR remains an existing local checkout; this repository contains only the extraction, fitting, transformation, scoring, and visualization pipeline.
 
-EgoHTR's original `smplx_exomc_joints` are used directly as MoCap World GT joints. PromptHMR's predicted joints are transformed into that same world frame before calculating **absolute MPJPE**. There is no MidHip/root subtraction, Procrustes alignment, scale alignment, or fitted transform. The 2nd Aria device pose is mapped from its SLAM origin into MoCap World using the provided device and world transforms. PromptHMR's RGB-camera-frame prediction follows the RGB Camera → Device → SLAM Origin → MoCap World chain:
+## Pipeline
+
+1. Extract the selected 2nd Aria RGB image, original EgoHTR SMPL-X parameters, and stored joints from `full_sequence.npz`.
+2. Read the observer RGB image size and focal length from EgoHTR, construct the pinhole intrinsic matrix, and pass it explicitly to PromptHMR for Neutral SMPL-X inference.
+3. Fit the Neutral PromptHMR mesh to the sequence's configured SMPL-X gender (Male for the included high-object frame) with pose and shape regularization. Save the fitted model separately.
+4. Transform the PromptHMR camera pose, prediction, and fitted mesh into SLAM Origin. Keep the GT joint coordinates as stored and interpret them as SLAM Origin. The GT mesh is regenerated from the saved GT parameters and displayed in the same assumed frame.
+5. Compute absolute BODY_25 MPJPE from the **original PromptHMR joints before fitting** and the original EgoHTR joints, then open Viser to compare the fitted prediction mesh, GT mesh, RGB image, and 2nd Aria RGB camera.
+
+## Coordinate frames
+
+The single supported evaluation frame is SLAM Origin. Homogeneous transforms use the `T_target_source` convention:
 
 ```text
-2nd Aria RGB camera
-  -> Aria device:       aria_obs_T_device_camera
-  -> Aria SLAM origin:  aria_obs_T_origin_device[index]
-  -> MoCap / ExoMC:     inverse(T_origin_exoW)
+RGB camera -> Aria device:      aria_obs_T_device_camera
+Aria device -> SLAM Origin:     aria_obs_T_origin_device[index]
+
+T_origin_camera = aria_obs_T_origin_device[index] @ aria_obs_T_device_camera
 ```
 
-In homogeneous notation, with `T_target_source` mapping source coordinates into target coordinates:
+Apply `T_origin_camera` to PromptHMR's original camera-frame BODY_25 joints and the fitted prediction mesh. Use the same matrix for the Viser camera pose and image frustum. EgoHTR's original `smplx_exomc_joints` are mapped to BODY_25 with PromptHMR's `smplx_to_openpose` indices and used directly as GT in this SLAM Origin hypothesis. The pipeline does not use `T_origin_exoW`, axis permutations, root subtraction, Procrustes alignment, or scale alignment.
 
-```text
-T_mocap_rgb_camera = inverse(T_origin_exoW)
-                     @ aria_obs_T_origin_device[index]
-                     @ aria_obs_T_device_camera
-```
+The stored `aria_obs_T_device_camera` is treated as the 2nd Aria RGB-camera extrinsic. Local calibration comparison and RGB projection support this interpretation; the high-object sequence's own VRS calibration was not available for direct comparison, so that provenance limitation remains. EgoHTR's saved RGB focal length and image dimensions are used directly; for the included k=2150 frame they produce a 1328×1328 image, 608.4 px focal length, and principal point (664, 664).
 
-The inverse is used because `T_origin_exoW` maps MoCap/ExoMC World into the Aria SLAM origin. The composed matrix gives the 2nd RGB camera's position and orientation in MoCap World; the same matrix transforms PromptHMR's camera-frame joints and mesh. The device pose in MoCap World is computed from `aria_obs_T_origin_device[index]` and `inverse(T_origin_exoW)`. No axis swaps or sign flips are introduced. The GT mesh is regenerated from EgoHTR's SMPL-X parameters using the sequence's configured gender and displayed in MoCap World alongside the transformed prediction.
+## Install
 
-## GT joints and mesh
-
-The BODY_25 GT joints are selected directly from EgoHTR's original `smplx_exomc_joints` using PromptHMR's `smplx_to_openpose` index map. These unchanged source joint coordinates are the MPJPE reference in MoCap World. The sequence's `config.yaml` supplies `smplx_config.gender`; this gender is required for regenerating the GT mesh. For the inspected high-object sequence it is `male`, and forwarding its saved parameters through that male SMPL-X model reproduces all 127 stored joints to floating-point precision. The pipeline records the maximum reconstruction difference in `manifest.json` and `evaluation.npz`.
-
-The GT mesh is regenerated from the saved SMPL-X pose, shape, and translation parameters. Its vertices are not changed by PromptHMR's BODY_25 joint corrections. Mesh faces are copied from EgoHTR and checked against the selected model's topology. For MPJPE, the pipeline uses the original EgoHTR joint positions, not joints regenerated by PromptHMR's wrapper.
-
-PromptHMR's predicted BODY_25 remains its model output. Its wrapper adjusts a few predicted elbow, hip, knee, and ankle joints; the GT is not altered to imitate those adjustments. The score therefore compares PromptHMR's predicted joint coordinates against EgoHTR's original BODY_25 joint coordinates in the shared ExoMC frame.
-
-## RGB camera calibration assumption
-
-Aria has separate RGB and SLAM camera frames, each with its own device extrinsic. The pipeline uses `aria_obs_T_device_camera` as the 2nd RGB camera-to-device transform. This interpretation has two local numerical checks:
-
-- The available 2nd-Aria VRS is from `exo-cliff-stones_s4_xhall_01`. Its raw RGB calibration differs from the high-object NPZ extrinsic by about 90.055° in rotation. Applying the observed camera-frame quarter-turn `Rz(-90°)` to that RGB calibration gives a 0.681° rotation residual and 1.31 mm translation difference. The same comparison against SLAM-left and SLAM-right after that quarter-turn leaves 39.955° / 37.249° rotation residuals and 13.83 mm / 130.22 mm translation differences. Intrinsics agree with RGB as well: high-object NPZ reports 1328×1328 and focal 608.400 px; the VRS RGB calibration is 1408×1408 and focal 608.211 px. The VRS SLAM streams are 640×480 with focal lengths near 242 px.
-- For high-object frame 2150, PromptHMR's saved BODY_25 has positive camera depth at every joint (z range 10.884–11.466 m). Projecting those joints with PromptHMR's saved intrinsics onto the saved 1328×1328 RGB image places the skeleton over the person. PromptHMR's implementation creates its joints and vertices from the input-image camera intrinsics and projects joints as `(x/z, y/z)`; this supports the camera-frame interpretation of its prediction.
-
-Together these checks strongly support that the stored extrinsic is RGB-camera based and that PromptHMR's output uses the RGB image camera frame. The remaining limitation is that the high-object sequence's own VRS is not available locally, so its stored extrinsic cannot be directly compared with that sequence's VRS calibration. The measured 90-degree frame adjustment is only part of the calibration comparison; the pipeline does not apply it as an extra correction to PromptHMR predictions. The transform chain and matrices used by each run are saved in `manifest.json` and `evaluation.npz` for review.
-
-## Requirements
-
-- Linux, Python 3.10+, CUDA-capable PyTorch environment supported by the installed PromptHMR version.
-- A working PromptHMR checkout with its model/checkpoint, YOLO weights, and SMPL-X model assets already installed. Follow that repository's setup for those large assets.
-- Access to the EgoHTR Hugging Face dataset for sequences that are not already present. The pipeline fetches only `sequences/<sequence>/full_sequence.npz` and `sequences/<sequence>/config.yaml`; it does not fetch raw VRS, MPS, scene, or `full_opt_sequence.npz` files.
-
-The Python environment running this package must also have PromptHMR's dependencies, plus `numpy`, `PyYAML`, `opencv-python`, `huggingface_hub`, and `viser`. Use the PromptHMR environment, then install this package:
+Use the Python/CUDA environment already configured for the local PromptHMR checkout:
 
 ```bash
 conda activate phmr_pt2.4
 cd ~/Codes/egohtr-prompthmr-eval
-python -m pip install -e . viser
+python -m pip install -e .
 ```
 
-For a gated dataset, authenticate once in the same account environment:
+PromptHMR's checkpoint, YOLO weights, and SMPL-X assets must already be installed in that checkout. The EgoHTR files must exist locally, or the dataset repository ID must be configured for the pipeline's minimal-file download path.
 
-```bash
-hf auth login
-```
+## Run
 
-## Configure and run
-
-Edit [`configs/example.yaml`](configs/example.yaml): set the dataset root, sequence, either exact `index` or `timestamp_seconds`, PromptHMR paths, output folder, and the Hugging Face dataset repo ID if files need downloading. Leave `index: null` to select the closest frame to the configured timestamp. The code checks that Aria and ExoMC timestamps agree at the selected index.
-
-Run the full pipeline with one command:
+Set paths and frame selection in [`configs/example.yaml`](configs/example.yaml). The included config reproduces `exo-high-object_s4_xhall_01`, index 2150, timestamp 71.6666666667 s:
 
 ```bash
 egohtr-phmr-eval --config configs/example.yaml
 ```
 
-For a one-off override or headless run:
+Use `--no-viewer` to finish after saving evaluation artifacts. `--index` or `--timestamp` can override the frame selected in the config. The pipeline selects the nearest timestamp and checks the Aria and ExoMC time grids at that index.
 
-```bash
-egohtr-phmr-eval --config configs/example.yaml --index 2150 --no-viewer
+## Evaluation definition
+
+For each BODY_25 joint `j`, the pipeline calculates:
+
+```text
+error_j_mm = 1000 * || T_origin_camera * prediction_joint_camera[j]
+                         - original_gt_joint_origin[j] ||_2
+MPJPE_mm = mean(error_j_mm for all 25 joints)
 ```
 
-The selected RGB frame is read from the compressed NPZ member incrementally, avoiding loading the entire image sequence into RAM. If the two sequence files are already on disk, no Hugging Face access is needed.
+Only the original PromptHMR `body_joints` and EgoHTR's original stored joints contribute to the metric. The gender-fitted mesh and its joints are excluded from MPJPE; fitting is used to create a separately saved mesh for visualization. No global translation or orientation is adjusted to improve the score.
 
 ## Outputs
 
-Each run writes to the configured output directory:
+The configured output directory contains:
 
-- `rgb.png`: selected observer RGB frame.
-- `eval_sample.npz`: selected timestamp, original 127 EgoHTR joints, SMPL-X parameters, and mesh faces.
-- `gt_body25_mesh.npz`: BODY_25 selected from the original EgoHTR joints, plus the regenerated gender-matched GT vertices and original faces. The BODY_25 source indices and SMPL-X gender are included.
-- `prediction.npz`, `output.pt`: PromptHMR prediction, including vertices, BODY_25, pose/rotmat, betas, transl, camera intrinsics, and faces.
-- `evaluation.npz`: prediction/GT in ExoMC coordinates, errors, final camera-to-ExoMC matrix, all chain matrices, and meshes.
-- `mpjpe_body25.csv`, `mpjpe_body25.txt`: per-joint error and mean in millimeters.
-- `manifest.json`: sequence/frame metadata, transform names and matrices, metric definition, and camera-frame caveat.
+- `rgb.png`: selected 2nd Aria RGB frame.
+- `eval_sample.npz`: original GT joints and SMPL-X parameters for the selected frame.
+- `gt_body25_mesh.npz`: direct GT BODY_25 mapping plus regenerated GT mesh and faces.
+- `prediction.npz` and `output.pt`: original Neutral PromptHMR prediction, including the model's processed camera intrinsics, mesh, joints, and parameters. The original full-resolution Aria RGB intrinsics are saved in `evaluation.npz` and `manifest.json`.
+- `gender_fit/fitted_male_prediction.npz` and `gender_fit/fit_report.json`: fitted model parameters and vertex/joint reconstruction diagnostics.
+- `evaluation.npz`: original prediction joints, direct GT joints, transformed fitted mesh, camera-to-Origin transform, and per-joint errors.
+- `mpjpe_body25.csv` and `mpjpe_body25.txt`: per-joint and mean absolute MPJPE in millimeters.
+- `manifest.json`: selected frame, coordinate assumptions, transform matrices, fitting provenance, and metric definition.
 
-The Viser viewer uses +Z as up and shows the predicted (red) and GT (blue) meshes in MoCap/ExoMC World, plus the 2nd Aria RGB camera pose and its RGB image frustum in orange. The camera and frustum use the same OpenCV axes as PromptHMR (+X right, +Y down, +Z forward); no extra axis flip is applied. Viewer startup happens after artifacts are written. Use `--no-viewer` to skip it.
+Viser shows the fitted prediction mesh in red, regenerated GT mesh in blue, the SLAM Origin axes, the 2nd Aria RGB camera pose, and the RGB image frustum. Camera axes follow PromptHMR/OpenCV (+X right, +Y down, +Z forward); the scene uses +Z as up.
 
-## Reproducing the recorded frames
+## Fit an existing prediction separately
 
-For the earlier examples, set the sequence and timestamp as follows:
+To fit a previously saved Neutral PromptHMR prediction without rerunning the evaluation, use:
 
-```yaml
-# First sequence
-sequence: exo-cliff-stones_s4_xhall_01
-index: 2150
-timestamp_seconds: 71.6666666667
-
-# Or second sequence
-sequence: exo-high-object_s4_xhall_01
-index: 2150
-timestamp_seconds: 71.6666666667
+```bash
+egohtr-phmr-fit-gender \
+  --prediction runs/exo-high-object-k2150-final/prediction.npz \
+  --output-dir runs/exo-high-object-k2150-final/gender_fit \
+  --prompthmr-repo ~/Codes/PromptHMR \
+  --smplx-model-folder ~/Codes/PromptHMR/data/body_models/smplx \
+  --gender male --device cuda --pose-prior-weight 1e-3
 ```
 
-Run and inspect `manifest.json`, the saved rotation matrix, and the viewer before interpreting the score. The first sequence’s previously used full_sequence.npz was removed after preserving the evaluation artifacts; reproducing it from scratch therefore requires downloading that sequence file again. The previous results are useful references, not guarantees of bit-identical output across model/library versions.
-
-## Repository boundaries
-
-Only this repository owns the pipeline wrapper. PromptHMR remains an external local checkout, and dataset/output files should stay outside Git. The `.gitignore` excludes generated runs and local data.
+The fitter first checks that the installed Neutral model reproduces the saved source mesh. It fixes global orientation and translation and fits body pose and shape with priors toward their original values. Source prediction and GT files are not modified.

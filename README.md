@@ -8,7 +8,7 @@ This repository runs a single-frame EgoHTR–PromptHMR evaluation using SLAM Ori
 2. Read the observer RGB image size and focal length from EgoHTR, construct the pinhole intrinsic matrix, and pass it explicitly to PromptHMR for Neutral SMPL-X inference.
 3. Fit the Neutral PromptHMR mesh to the sequence's configured SMPL-X gender (Male for the included high-object frame) with pose and shape regularization. Save the fitted model separately.
 4. Transform the PromptHMR camera pose, prediction, and fitted mesh into SLAM Origin. Keep the GT joint coordinates as stored and interpret them as SLAM Origin. The GT mesh is regenerated from the saved GT parameters and displayed in the same assumed frame.
-5. Compute absolute BODY_25 MPJPE from the **original PromptHMR joints before fitting** and the original EgoHTR joints, then open Viser to compare the fitted prediction mesh, GT mesh, RGB image, and 2nd Aria RGB camera.
+5. Compute absolute MPJPE and PA-MPJPE from the **original PromptHMR joints before fitting** and the original EgoHTR joints, then open Viser to compare the fitted prediction mesh, GT mesh, RGB image, and 2nd Aria RGB camera.
 
 ## Coordinate frames
 
@@ -57,7 +57,9 @@ error_j_mm = 1000 * || T_origin_camera * prediction_joint_camera[j]
 MPJPE_mm = mean(error_j_mm for all 25 joints)
 ```
 
-Only the original PromptHMR `body_joints` and EgoHTR's original stored joints contribute to the metric. The gender-fitted mesh and its joints are excluded from MPJPE; fitting is used to create a separately saved mesh for visualization. No global translation or orientation is adjusted to improve the score.
+PA-MPJPE applies a single similarity Procrustes alignment to the prediction BODY_25 joints before measuring the same 25 Euclidean errors. The alignment allows global rotation, translation, and uniform scale, and disallows reflection. It is reported alongside absolute MPJPE; it does not replace or modify the absolute metric.
+
+Only the original PromptHMR `body_joints` and EgoHTR's original stored joints contribute to the metrics. The gender-fitted mesh and its joints are excluded. Absolute MPJPE uses the unaligned SLAM Origin coordinates; PA-MPJPE aligns a copy of the prediction joints to GT and does not change saved joints, meshes, or the absolute MPJPE result.
 
 ## Outputs
 
@@ -68,11 +70,34 @@ The configured output directory contains:
 - `gt_body25_mesh.npz`: direct GT BODY_25 mapping plus regenerated GT mesh and faces.
 - `prediction.npz` and `output.pt`: original Neutral PromptHMR prediction, including the model's processed camera intrinsics, mesh, joints, and parameters. The original full-resolution Aria RGB intrinsics are saved in `evaluation.npz` and `manifest.json`.
 - `gender_fit/fitted_male_prediction.npz` and `gender_fit/fit_report.json`: fitted model parameters and vertex/joint reconstruction diagnostics.
-- `evaluation.npz`: original prediction joints, direct GT joints, transformed fitted mesh, camera-to-Origin transform, and per-joint errors.
-- `mpjpe_body25.csv` and `mpjpe_body25.txt`: per-joint and mean absolute MPJPE in millimeters.
+- `evaluation.npz`: original prediction joints, direct GT joints, transformed fitted mesh, camera-to-Origin transform, and per-joint/mean MPJPE and PA-MPJPE.
+- `mpjpe_body25.csv` and `mpjpe_body25.txt`: per-joint and mean absolute MPJPE in millimeters; the text summary also reports PA-MPJPE.
+- `pa_mpjpe_body25.csv`: per-joint Procrustes-aligned errors in millimeters.
 - `manifest.json`: selected frame, coordinate assumptions, transform matrices, fitting provenance, and metric definition.
 
 Viser shows the fitted prediction mesh in red, regenerated GT mesh in blue, the SLAM Origin axes, the 2nd Aria RGB camera pose, and the RGB image frustum. Camera axes follow PromptHMR/OpenCV (+X right, +Y down, +Z forward); the scene uses +Z as up.
+
+## Render a qualitative comparison figure
+
+After an evaluation run has produced its artifacts, render a publication-style PNG without rerunning inference:
+
+```bash
+egohtr-phmr-figure \
+  --evaluation-dir runs/exo-high-object-k3700-qualitative \
+  --output runs/exo-high-object-k3700-qualitative/qualitative_comparison.png
+```
+
+The figure contains two SLAM Origin side views with the 2nd Aria camera frustum, a calibrated RGB mesh projection, and matched GT-defined front/right/left/rear pose views. The lower GT and fitted-prediction panels use the same GT-pelvis camera target, camera directions, orthographic projection, and scale; mesh coordinates are left untouched. It uses the fitted Male mesh for qualitative display and evaluation metrics from the original, unfitted prediction joints.
+
+To crop horizontal whitespace from the already-rendered lower mesh panels while keeping the upper panels unchanged, run:
+
+```bash
+egohtr-phmr-crop-figure \
+  --figure runs/exo-high-object-k3700-qualitative/qualitative_comparison.png \
+  --rgb runs/exo-high-object-k3700-qualitative/rgb.png
+```
+
+This is an image-only post-process. It preserves the GT and PromptHMR crop aspect ratios and common native pixel scale, without rerendering or transforming the meshes.
 
 ## Fit an existing prediction separately
 

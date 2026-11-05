@@ -12,7 +12,7 @@ import yaml
 from .dataset import ensure_sequence_files, select_index
 from .gt import BODY25_NAMES, generate_gt
 from .inference import run_prompthmr
-from .metrics import compute_mpjpe
+from .metrics import compute_mpjpe, compute_pa_mpjpe
 from .sample import extract_sample
 from .transforms import apply_transform, make_transform_chain
 
@@ -123,12 +123,17 @@ def main():
     # GT joints remain the direct BODY_25 selection from EgoHTR; only the
     # original, unfitted PromptHMR joints are used for the metric.
     errors, mean_error = compute_mpjpe(prediction_joints_origin, gt_joints)
+    pa_errors, mean_pa_error = compute_pa_mpjpe(prediction_joints_origin, gt_joints)
 
     names = BODY25_NAMES
     with (output_dir / "mpjpe_body25.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["index", "joint_name", "error_mm"])
         writer.writerows((i, names[i], f"{errors[i]:.3f}") for i in range(25))
+    with (output_dir / "pa_mpjpe_body25.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["index", "joint_name", "aligned_error_mm"])
+        writer.writerows((i, names[i], f"{pa_errors[i]:.3f}") for i in range(25))
     np.savez_compressed(output_dir / "evaluation.npz", index=np.asarray(index), timestamp=np.asarray(timestamp),
         target_coordinate_frame=np.asarray("SLAM Origin"), T_camera_to_origin=T,
         camera_intrinsics=cam_int, prediction_body_joints_camera=pred_joints_camera,
@@ -138,6 +143,7 @@ def main():
         smplx_joint_reconstruction_max_abs_m=np.asarray(
             np.nan if joint_reconstruction_max_abs is None else joint_reconstruction_max_abs),
         joint_error_mm=errors, mean_mpjpe_mm=np.asarray(mean_error),
+        pa_joint_error_mm=pa_errors, mean_pa_mpjpe_mm=np.asarray(mean_pa_error),
         prediction_vertices_camera=pred_vertices_camera,
         prediction_vertices_fitted_origin=fitted_vertices_origin, gt_vertices_origin=gt_vertices,
         faces=gt_faces, **transforms)
@@ -148,9 +154,10 @@ def main():
             "run PromptHMR with EgoHTR Aria RGB intrinsics",
             "fit neutral PromptHMR mesh to the sequence-gender SMPL-X model",
             "transform camera-frame prediction and camera pose into SLAM Origin",
-            "compute absolute BODY_25 MPJPE from original prediction and GT joints; open Viser",
+            "compute absolute MPJPE and Procrustes-aligned PA-MPJPE from original prediction and GT joints; open Viser",
         ],
-        "metric": "absolute 3D BODY_25 MPJPE in SLAM Origin; original unfitted PromptHMR joints; no root subtraction, Procrustes, or scale alignment",
+        "metric": "absolute 3D BODY_25 MPJPE and similarity-Procrustes-aligned PA-MPJPE in SLAM Origin; original unfitted PromptHMR joints",
+        "pa_mpjpe_alignment": "prediction aligned to GT with one global proper rotation, translation, and uniform scale; reflection disallowed",
         "evaluation_coordinate_frame": "SLAM Origin",
         "ground_truth_coordinate_assumption": "GT coordinates are treated as already expressed in SLAM Origin",
         "ground_truth_joint_source": "direct BODY_25 selection from EgoHTR smplx_exomc_joints",
@@ -169,6 +176,7 @@ def main():
         "camera_extrinsic_semantics": cfg.get("camera_extrinsic_semantics", "unverified"),
         "transform_chain": "T_origin_camera = aria_obs_T_origin_device[index] @ aria_obs_T_device_camera",
         "mean_mpjpe_mm": mean_error,
+        "mean_pa_mpjpe_mm": mean_pa_error,
         "camera_to_origin_rotation": T[:3, :3].tolist(),
         "transforms": {k: v.tolist() for k, v in transforms.items()},
         "camera_frame_semantics_note": "NPZ key name alone does not establish RGB-vs-SLAM frame semantics; verify calibration provenance.",
@@ -180,10 +188,12 @@ def main():
         f"GT joints = direct selection from smplx_exomc_joints; SMPL-X gender = {smplx_gender}\n"
         "Prediction joints = original PromptHMR joints before gender fitting\n"
         f"Mean MPJPE = {mean_error:.3f} mm\n"
+        f"Mean PA-MPJPE = {mean_pa_error:.3f} mm (global rotation, translation, and uniform scale aligned to GT)\n"
         "GT coordinate assumption = already in SLAM Origin\n"
         "Transform = aria_obs_T_origin_device[index] @ aria_obs_T_device_camera\n",
         encoding="utf-8")
     print(f"Mean absolute MPJPE: {mean_error:.3f} mm")
+    print(f"Mean PA-MPJPE: {mean_pa_error:.3f} mm")
     print(f"Camera → SLAM Origin rotation:\n{T[:3, :3]}")
     print(f"Gender-fit vertex RMSE: {fit_report[f'{smplx_gender}_after_fit']['vertices']['rmse_m'] * 1000:.3f} mm")
     print(f"Saved outputs: {output_dir}")

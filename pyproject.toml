@@ -7,11 +7,13 @@ name = "egohtr-prompthmr-eval"
 version = "0.1.0"
 description = "EgoHTR to PromptHMR single-frame evaluation pipeline"
 requires-python = ">=3.10"
-dependencies = ["numpy", "PyYAML", "opencv-python", "huggingface_hub", "viser", "scipy"]
+dependencies = ["numpy", "PyYAML", "opencv-python", "huggingface_hub", "viser", "scipy", "matplotlib"]
 
 [project.scripts]
 egohtr-phmr-eval = "egohtr_phmr_eval.cli:main"
 egohtr-phmr-fit-gender = "egohtr_phmr_eval.gender_fit:main"
+egohtr-phmr-figure = "egohtr_phmr_eval.figure:main"
+egohtr-phmr-crop-figure = "egohtr_phmr_eval.crop_figure:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,37 @@
+mode: video
+dataset_root: ~/Datasets/EgoHTR
+sequence: exo-high-object_s4_xhall_01
+output_dir: ./runs/exo-high-object-video
+
+# Existing local PromptHMR checkout; the evaluation pipeline does not modify it.
+prompthmr_repo: ~/Codes/PromptHMR
+smplx_model_folder: data/body_models/smplx
+device: cuda
+
+video:
+  # Defaults to the full sequence. stop_index is exclusive.
+  start_index: 0
+  stop_index: null
+  image_size: 896
+  tracker: sam2
+  num_max_people: 100
+  det_thresh: 0.1
+  det_score_thresh: 0.1
+  det_height_thresh: 0.3
+  bbox_interp: true
+  track_id: null
+  min_gt_visible_joints: 8
+  run_post_opt: true
+  postopt_lr: 1.0e-2
+  mesh_batch_size: 32
+  # Fit only the display mesh; all evaluation metrics use original video joints.
+  fit_display_meshes: true
+  fit_batch_size: 4
+  fit_max_iter: 120
+  fit_pose_prior_weight: 1.0e-3
+  fit_shape_prior_weight: 1.0e-4
+  window_frames: 100
+  initial_alignment_frames: 2
+
+viewer: false
+huggingface_repo_id: null

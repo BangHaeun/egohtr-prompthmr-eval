@@ -51,14 +51,26 @@ def _load_aria_rgb_intrinsics(sequence_npz, rgb_shape):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run one EgoHTR–PromptHMR frame evaluation")
+    parser = argparse.ArgumentParser(description="Run an EgoHTR–PromptHMR image-frame or video evaluation")
     parser.add_argument("--config", default="configs/example.yaml")
+    parser.add_argument("--mode", choices=("image", "video"), help="Override config mode")
     parser.add_argument("--index", type=int)
     parser.add_argument("--timestamp", type=float)
+    parser.add_argument("--start-index", type=int, help="Video mode: first source frame, inclusive")
+    parser.add_argument("--stop-index", type=int, help="Video mode: last source frame, exclusive")
     parser.add_argument("--no-viewer", action="store_true")
     args = parser.parse_args()
     config_path = _expand(args.config)
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    mode = args.mode or cfg.get("mode", "image")
+    if mode == "video":
+        from .video import run_video
+        run_video(cfg, config_path, start_index=args.start_index,
+                  stop_index=args.stop_index, no_viewer=args.no_viewer)
+        return
+    if mode != "image":
+        raise ValueError(f"Unsupported evaluation mode: {mode!r}")
 
     dataset_root = _expand(cfg["dataset_root"])
     sequence = str(cfg["sequence"])

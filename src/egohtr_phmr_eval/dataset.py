@@ -80,6 +80,40 @@ def read_npz_rgb_frame(path: Path, key: str, index: int) -> np.ndarray:
             return frame
 
 
+def iter_npz_rgb_frames(path: Path, key: str, start: int = 0, stop: int | None = None):
+    """Stream RGB frames from a compressed NPZ member without loading the video array.
+
+    Yields ``(source_index, frame)``. The member is decompressed only once, unlike
+    repeatedly calling :func:`read_npz_rgb_frame` for consecutive frames.
+    """
+    with zipfile.ZipFile(path) as zf:
+        member = f"{key}.npy"
+        if member not in zf.namelist():
+            raise KeyError(f"{key!r} is not present in {path}")
+        with zf.open(member) as stream:
+            version = np.lib.format.read_magic(stream)
+            if version == (1, 0):
+                shape, fortran, dtype = np.lib.format.read_array_header_1_0(stream)
+            elif version in ((2, 0), (3, 0)):
+                shape, fortran, dtype = np.lib.format._read_array_header(stream, version)
+            else:
+                raise ValueError(f"Unsupported NPY format {version}")
+            if len(shape) != 4 or shape[-1] != 3:
+                raise ValueError(f"Expected RGB array (F,H,W,3), got {shape}")
+            if fortran:
+                raise ValueError("Fortran-ordered RGB arrays are not supported")
+            stop = shape[0] if stop is None else min(int(stop), shape[0])
+            start = int(start)
+            if not 0 <= start <= stop:
+                raise IndexError(f"Invalid frame range [{start}, {stop}) for {shape[0]} frames")
+            frame_shape = shape[1:]
+            frame_bytes = int(np.prod(frame_shape)) * dtype.itemsize
+            _skip(stream, frame_bytes * start)
+            for index in range(start, stop):
+                frame = np.frombuffer(_read_exact(stream, frame_bytes), dtype=dtype).reshape(frame_shape)
+                yield index, frame
+
+
 def select_index(npz_path: Path, index: int | None, timestamp_seconds: float | None) -> tuple[int, float]:
     with np.load(npz_path, allow_pickle=False) as data:
         keys = set(data.files)

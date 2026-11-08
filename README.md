@@ -1,6 +1,6 @@
 # EgoHTR–PromptHMR evaluation
 
-This repository runs a single-frame EgoHTR–PromptHMR evaluation using SLAM Origin as the common coordinate frame. PromptHMR remains an existing local checkout; this repository contains only the extraction, fitting, transformation, scoring, and visualization pipeline.
+This repository runs image-frame and video EgoHTR–PromptHMR evaluations using SLAM Origin as the common coordinate frame. PromptHMR remains an existing local checkout; this repository contains the extraction, transformation, scoring, and visualization pipeline.
 
 ## Pipeline
 
@@ -46,6 +46,37 @@ egohtr-phmr-eval --config configs/example.yaml
 ```
 
 Use `--no-viewer` to finish after saving evaluation artifacts. `--index` or `--timestamp` can override the frame selected in the config. The pipeline selects the nearest timestamp and checks the Aria and ExoMC time grids at that index.
+
+### Video mode
+
+Video mode streams the selected 2nd Aria RGB frames from `full_sequence.npz` into a contiguous MP4, then passes that MP4 path to PromptHMR's official `Pipeline.load_frames()` decoder. PromptHMR's SAM2/ViTPose/image-head/video-head stages consume the decoded video frames; no JPG sequence is used as model input. The encoded frame count is checked against the EgoHTR source range before inference, and the original frame indices and timestamps are retained for GT matching. Since `full_sequence.npz` stores RGB frames rather than an MP4, the MP4 is generated locally under the run output's `prompthmr_video_work/` folder. By default it processes the full sequence; use `video.start_index` and exclusive `video.stop_index` in [`configs/example_video.yaml`](configs/example_video.yaml) to select a contiguous source range. These range options are useful for smoke tests; WA/W-MPJPE windows are applied only after inference.
+
+```bash
+egohtr-phmr-eval --config configs/example_video.yaml
+# Or override the configured range from the command line:
+egohtr-phmr-eval --config configs/example_video.yaml --start-index 2140 --stop-index 2160 --no-viewer
+```
+
+PromptHMR's temporal camera-angular-velocity input is derived from `aria_obs_T_origin_device[i] @ aria_obs_T_device_camera` instead of identity rotations. Its official `world_hps_estimation` stage is retained. The stage's fixed axis rotation and floor offset are a rigid canonicalization; the code recovers that transform from the before/after camera poses and applies its inverse to saved meshes and joints. Official `post_optimization` is retained by default in this canonical gravity/floor frame. Its camera pose adjustment is disabled because EgoHTR camera poses are the fixed reference; person translation refinement, reprojection, temporal, and contact terms remain enabled. PromptHMR camera smoothing and SPEC rotation are disabled because they would modify the supplied EgoHTR trajectory before canonicalization. These deviations and the recovered transform are recorded in `video_summary.json`.
+
+The selected evaluation track is associated using overlap between projected GT BODY_25 bounds and PromptHMR track boxes. Set `video.track_id` to override association. Inference is separated at track gaps so the temporal model does not bridge missing intervals. Frames with missing selected-track detections or too few GT joints projected inside the image are recorded in `video_excluded_frames.json`.
+
+Video mode reports absolute MPJPE and framewise PA-MPJPE, plus WA-MPJPE and W-MPJPE over non-overlapping, source-contiguous windows (defaults: 100 frames; first 2 frames for W alignment). Both window metrics use a proper rigid rotation and translation with no scale. This follows the 100-frame/first-two-versus-whole-window alignment protocol described in TRAM/WHAM; the papers do not specify a scale term in those descriptions, so this implementation explicitly uses no scale. Results are in millimeters.
+
+Video metrics use the original PromptHMR video joints. Separately, the selected-track display meshes are fitted frame by frame to the gender in the sequence config using the same regularized corresponding-vertex L-BFGS fitting method as image mode: global orientation and translation stay fixed, while body pose and shape are optimized with priors. This fitted mesh is only for visualization and never enters MPJPE/PA-MPJPE/WA-MPJPE/W-MPJPE. Configure it under `video.fit_display_meshes` and the related fit settings. The EgoHTR GT SMPL-X parameters and joints are saved for later GT mesh regeneration.
+
+Video outputs include:
+
+- `video_evaluation.npz`: evaluated GT/prediction BODY_25, selected-track and GT SMPL-X parameters, camera poses, timestamps, and frame errors.
+- `prediction_vertices_slam_origin.npy`: selected-track prediction mesh vertices for evaluated frames, without image or mesh alignment.
+- `prediction_vertices_fitted_<gender>_slam_origin.npy` and `prediction_fitted_<gender>_video.npz`: sequence-gender fitted display meshes and parameters, stored separately from the original mesh and metrics.
+- `video_gender_fit_<gender>_report.json`: fit settings and reconstruction/shape diagnostics.
+- `video_frame_metrics.csv`: source-indexed MPJPE and PA-MPJPE.
+- `video_windows.json`: per-window WA/W-MPJPE and rigid transforms.
+- `video_excluded_frames.json`: source frame IDs and exclusion reasons.
+- `video_summary.json`: aggregate metrics, track association, camera/intrinsic details, and post-processing provenance.
+
+The current video output stores prediction meshes and the full GT parameters/joints needed to regenerate GT meshes. A time-synchronized Viser timeline is not yet connected to video mode.
 
 ## Evaluation definition
 

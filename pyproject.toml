@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "egohtr-prompthmr-eval"
 version = "0.1.0"
-description = "EgoHTR to PromptHMR single-frame evaluation pipeline"
+description = "EgoHTR to PromptHMR image and video evaluation pipeline"
 requires-python = ">=3.10"
 dependencies = ["numpy", "PyYAML", "opencv-python", "huggingface_hub", "viser", "scipy", "matplotlib"]
 

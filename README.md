@@ -2,6 +2,87 @@
 
 This repository runs image-frame and video EgoHTR–PromptHMR evaluations using SLAM Origin as the common coordinate frame. PromptHMR remains an existing local checkout; this repository contains the extraction, transformation, scoring, and visualization pipeline.
 
+## Repository layout and data flow
+
+The repository **does not contain the original EgoHTR dataset**. Input files can
+be anywhere on disk; their basenames are not part of the interface. The data
+*inside* the NPZ must still have the EgoHTR keys needed for RGB, GT, calibration,
+and camera poses. The YAML must include the sequence's `smplx_config.gender`.
+
+```text
+egohtr-prompthmr-eval/
+├── configs/
+│   ├── example.yaml                 # Image settings + explicit input paths
+│   └── example_video.yaml           # Video settings + explicit input paths
+├── src/egohtr_phmr_eval/
+│   ├── cli.py                       # CLI and mode selection
+│   ├── dataset.py                   # Input resolution, optional legacy HF download, NPZ readers
+│   ├── sample.py                    # Image frame/GT extraction
+│   ├── inference.py                 # Image PromptHMR inference
+│   ├── video.py                     # Video frames, inference and saving
+│   ├── gt.py                        # GT mesh/joint preparation
+│   ├── transforms.py                # Camera/SLAM coordinate conversion
+│   ├── metrics.py                   # Image/individual-frame metrics
+│   ├── video_metrics.py             # Window metrics
+│   └── viewer.py                    # Image Viser viewer
+├── runs/                            # Configurable output location
+├── tests/
+└── README.md
+
+External input (example; these filenames are NOT required):
+/data/session_A/capture.npz             # EgoHTR-format RGB, GT, timestamps, poses
+/data/session_A/metadata.yaml           # Sequence config (including SMPL-X gender)
+
+Image outputs (output_dir):
+├── rgb.png
+├── eval_sample.npz
+├── gt_body25_mesh.npz
+├── prediction.npz
+├── output.pt
+├── evaluation.npz
+├── mpjpe_body25.csv
+├── pa_mpjpe_body25.csv
+├── manifest.json
+└── gender_fit/
+
+Video outputs (output_dir):
+├── prompthmr_video_work/              # Intermediate MP4 used by official video loader
+├── video_evaluation.npz
+├── prediction_vertices_slam_origin.npy
+├── video_frame_metrics.csv
+├── video_windows.json
+├── video_excluded_frames.json
+├── video_summary.json
+└── prediction_fitted_<gender>_video.npz  # If display fitting is enabled
+```
+
+Input processing: the CLI calls `dataset.resolve_input_files` to validate
+the two configured paths. Image mode reads one RGB frame and its GT, saves
+`rgb.png` / `eval_sample.npz`, and runs inference. Video mode streams a
+contiguous NPZ RGB range into a local MP4, decodes it with the official
+PromptHMR loader, retains original source-frame indices for GT matching, and
+runs video inference. The intermediate MP4 is **part of the current video
+implementation**, not merely a one-off validation artifact. Both modes save
+predictions and metrics to `output_dir`.
+
+Configure direct input paths (preferred) in **either** mode:
+
+```yaml
+input:
+  sequence_npz: /data/session_A/capture.npz
+  sequence_config: /data/session_A/metadata.yaml
+output_dir: ./runs/experiment_01
+```
+
+Paths support `~` and environment variables. Both input paths are required
+together. When `input` is omitted, the older `dataset_root` +
+`sequence` settings still resolve
+`<dataset_root>/sequences/<sequence>/full_sequence.npz` and `config.yaml`;
+only this legacy layout supports the optional Hugging Face minimal-file
+download. Explicit input files are never downloaded or overwritten. Setting
+arbitrary input filenames **does not** enable arbitrary video formats or
+non-EgoHTR NPZ schemas.
+
 ## Pipeline
 
 1. Extract the selected 2nd Aria RGB image, original EgoHTR SMPL-X parameters, and stored joints from `full_sequence.npz`.
@@ -39,7 +120,7 @@ PromptHMR's checkpoint, YOLO weights, and SMPL-X assets must already be installe
 
 ## Run
 
-Set paths and frame selection in [`configs/example.yaml`](configs/example.yaml). The included config reproduces `exo-high-object_s4_xhall_01`, index 2150, timestamp 71.6666666667 s:
+Set explicit input paths and frame selection in [`configs/example.yaml`](configs/example.yaml). The included config reproduces `exo-high-object_s4_xhall_01`, index 2150, timestamp 71.6666666667 s:
 
 ```bash
 egohtr-phmr-eval --config configs/example.yaml

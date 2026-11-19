@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from .dataset import ensure_sequence_files, select_index
+from .dataset import resolve_input_files, select_index
 from .gt import BODY25_NAMES, generate_gt
 from .inference import run_prompthmr
 from .metrics import compute_mpjpe, compute_pa_mpjpe
@@ -72,9 +72,7 @@ def main():
     if mode != "image":
         raise ValueError(f"Unsupported evaluation mode: {mode!r}")
 
-    dataset_root = _expand(cfg["dataset_root"])
-    sequence = str(cfg["sequence"])
-    archive, sequence_config = ensure_sequence_files(dataset_root, sequence, cfg.get("huggingface_repo_id"))
+    archive, sequence_config, sequence = resolve_input_files(cfg)
     sequence_cfg = yaml.safe_load(sequence_config.read_text(encoding="utf-8")) or {}
     smplx_gender = (sequence_cfg.get("smplx_config") or {}).get("gender")
     if not smplx_gender:
@@ -160,7 +158,8 @@ def main():
         prediction_vertices_fitted_origin=fitted_vertices_origin, gt_vertices_origin=gt_vertices,
         faces=gt_faces, **transforms)
     manifest = {
-        "sequence": sequence, "index": index, "timestamp_seconds": timestamp,
+        "sequence": sequence, "input_npz": str(archive), "input_sequence_config": str(sequence_config),
+        "index": index, "timestamp_seconds": timestamp,
         "pipeline_steps": [
             "extract 2nd Aria RGB and EgoHTR GT sample",
             "run PromptHMR with EgoHTR Aria RGB intrinsics",

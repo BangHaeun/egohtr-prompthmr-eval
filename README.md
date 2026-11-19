@@ -81,26 +81,7 @@ output_dir: ./runs/experiment_01
 - 경로에는 `~` 및 환경 변수를 사용할 수 있습니다.
 - `input`의 두 경로는 **함께 지정**해야 합니다. 하나만 지정하거나 파일이 없으면 오류를 반환합니다.
 - 지정한 입력 파일은 다운로드하거나 덮어쓰지 않습니다.
-
-### 이전 설정 방식과 호환
-
-예전의 데이터셋 규격 폴더를 사용하는 경우, `input` 항목을 **제거하고** 아래처럼 설정해도 됩니다.
-
-```yaml
-dataset_root: ~/Datasets/EgoHTR
-sequence: exo-high-object_s4_xhall_01
-huggingface_repo_id: null
-```
-
-이때만 프로그램이 다음의 **기존 고정 경로**에서 파일을 탐색합니다.
-
-```text
-~/Datasets/EgoHTR/sequences/exo-high-object_s4_xhall_01/
-├── full_sequence.npz
-└── config.yaml
-```
-
-구방식에서는 필요한 파일이 없을 때 `huggingface_repo_id`를 지정하면 Hugging Face 데이터셋에서 두 파일만 다운로드하는 기능을 사용할 수 있습니다. 현재 예제 설정은 **직접 입력 경로 방식**을 사용하며 `huggingface_repo_id: null`입니다. 새로운 방식에서는 파일을 미리 준비해야 합니다.
+- 파일을 미리 준비해야 합니다.
 
 ### NPZ 내부에서 읽는 주요 데이터
 
@@ -206,7 +187,6 @@ T_origin_camera =
 
 원본 GT 관절은 별도의 `T_origin_exoW`, 축 순열, root subtraction 등을 거쳐 보정하지 않습니다. **절대 MPJPE**에도 정렬이나 스케일 보정이 들어가지 않습니다. 단, **PA-MPJPE는 지표 정의상 평가용 복사본을 Procrustes 정렬**합니다.
 
-`aria_obs_T_device_camera`는 2nd Aria RGB 외부 파라미터로 해석합니다. 내부 calibration 비교와 RGB 투영 결과는 이를 지지하지만, 해당 high-object 시퀀스의 VRS calibration으로 직접 검증하지 못했다는 한계는 남아 있습니다. 예제 k=2150의 저장 RGB 정보는 1328×1328, 초점거리 608.4px, 주점 (664, 664)입니다.
 
 ### 지표 정의
 
@@ -214,8 +194,6 @@ T_origin_camera =
 - **PA-MPJPE:** 매 프레임의 예측 BODY_25 관절을 GT에 회전·이동·균일 스케일로 정렬한 뒤 측정(mm). 반사는 허용하지 않습니다.
 - **WA-MPJPE(비디오):** 연속된 윈도우 **전체**를 기준으로 하나의 회전·이동 정렬을 구한 뒤 오차 측정(mm).
 - **W-MPJPE(비디오):** 각 윈도우의 **처음 2프레임**을 기준으로 회전·이동 정렬을 구하고 동일한 정렬을 해당 윈도우 전체에 적용한 뒤 측정(mm).
-
-현재 구현에서 **WA/W 모두 스케일 정렬을 사용하지 않습니다.** 기본 윈도우는 100프레임이며 겹치지 않는 연속 구간을 평가합니다. 추적이 끊긴 구간은 분리됩니다. 이는 TRAM/WHAM의 전체 윈도우 정렬과 초기 프레임 정렬 방식에 대응하는 구현입니다.
 
 이미지와 비디오 모두 **원본 Neutral PromptHMR 예측 관절**로 지표를 계산합니다. gender fitting은 비교용 메시를 생성할 뿐 지표에 사용하지 않습니다.
 
@@ -250,13 +228,12 @@ T_origin_camera =
 | `video_summary.json` | 집계 지표, 트랙 매칭, 카메라 설정, 후처리 내역 |
 | `prompthmr_video_work/` | MP4와 공식 로더 작업 파일 |
 
-비디오 결과에는 GT 메시를 다시 생성할 수 있도록 GT 파라미터와 관절을 저장합니다. **비디오용 시간 동기화 Viser 타임라인은 아직 연결되지 않았습니다.**
+비디오 결과에는 GT 메시를 다시 생성할 수 있도록 GT 파라미터와 관절을 저장합니다.
 
 ## 7. 시각화 및 후속 작업
 
 이미지 모드의 Viser는 **예측 메시(빨강), GT 메시(파랑), SLAM Origin 축, 2nd Aria 카메라 pose, RGB 프러스텀**을 표시합니다. 카메라는 OpenCV 좌표축(+X 오른쪽, +Y 아래, +Z 전방)을 따르고 장면은 +Z를 위쪽으로 둡니다.
 
-이미 생성한 평가 결과에서 비교 이미지 PNG를 만들 때는 추론을 다시 실행할 필요가 없습니다.
 
 ```bash
 egohtr-phmr-figure \
@@ -265,16 +242,6 @@ egohtr-phmr-figure \
 ```
 
 비교 이미지는 SLAM Origin 측면 시점, 보정된 RGB 메시 투영, GT 기준 앞/오른쪽/왼쪽/뒤 포즈 비교로 구성됩니다. 하단 메시 패널은 동일한 GT pelvis 기준 카메라 대상·방향·정사영 스케일을 사용하며, 메시 좌표는 변경하지 않습니다.
-
-기존 비교 이미지의 하단 메시 패널에서 좌우 여백만 줄이려면:
-
-```bash
-egohtr-phmr-crop-figure \
-  --figure runs/exo-high-object-k3700-qualitative/qualitative_comparison.png \
-  --rgb runs/exo-high-object-k3700-qualitative/rgb.png
-```
-
-이 명령은 이미지 후처리만 수행하며, 메시는 다시 렌더링하거나 변환하지 않습니다.
 
 기존 Neutral 예측을 다시 추론하지 않고 별도로 Male SMPL-X에 피팅하려면:
 

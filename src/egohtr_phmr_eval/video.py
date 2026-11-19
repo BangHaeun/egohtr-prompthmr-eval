@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import yaml
 
-from .dataset import ensure_sequence_files, iter_npz_rgb_frames
+from .dataset import resolve_input_files, iter_npz_rgb_frames
 from .gt import BODY25_NAMES
 from .metrics import compute_mpjpe, compute_pa_mpjpe
 from .transforms import apply_transform
@@ -348,9 +348,7 @@ def _fit_display_meshes(target_vertices, pose_aa, betas, transl, repo, model_fol
 
 
 def run_video(cfg, config_path, *, start_index=None, stop_index=None, no_viewer=False):
-    dataset_root = _expand(cfg["dataset_root"])
-    sequence = str(cfg["sequence"])
-    archive, seq_config = ensure_sequence_files(dataset_root, sequence, cfg.get("huggingface_repo_id"))
+    archive, seq_config, sequence = resolve_input_files(cfg)
     sequence_cfg = yaml.safe_load(seq_config.read_text(encoding="utf-8")) or {}
     gender = (sequence_cfg.get("smplx_config") or {}).get("gender")
     if not gender:
@@ -715,7 +713,8 @@ def run_video(cfg, config_path, *, start_index=None, stop_index=None, no_viewer=
         (output_dir / "video_excluded_frames.json").write_text(json.dumps(exclusions, indent=2), encoding="utf-8")
         (output_dir / "video_windows.json").write_text(json.dumps(windows, indent=2), encoding="utf-8")
         summary = {
-            "sequence": sequence, "mode": "video", "source_frame_range": [int(source_indices[0]), int(source_indices[-1]) + 1],
+            "sequence": sequence, "input_npz": str(archive), "input_sequence_config": str(seq_config),
+            "mode": "video", "source_frame_range": [int(source_indices[0]), int(source_indices[-1]) + 1],
             "num_source_frames": int(len(source_indices)), "num_evaluated_frames": int(len(kept_source)),
             "prompthmr_input": "MP4 decoded by official Pipeline.load_frames",
             "mp4_path": str(input_mp4), "mp4_fps": float(source_fps),

@@ -1,5 +1,11 @@
-dataset_root: ~/Datasets/EgoHTR
-sequence: exo-high-object_s4_xhall_01
+# Explicit input paths (preferred). Filenames and locations are arbitrary.
+input:
+  sequence_npz: ~/Datasets/EgoHTR/sequences/exo-high-object_s4_xhall_01/full_sequence.npz
+  sequence_config: ~/Datasets/EgoHTR/sequences/exo-high-object_s4_xhall_01/config.yaml
+
+# Legacy dataset layout (used only when both input paths above are omitted).
+# dataset_root: ~/Datasets/EgoHTR
+# sequence: exo-high-object_s4_xhall_01
 index: 2150
 timestamp_seconds: 71.6666666667
 output_dir: ./runs/exo-high-object-k2150-final

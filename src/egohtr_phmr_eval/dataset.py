@@ -32,6 +32,35 @@ def ensure_sequence_files(dataset_root: Path, sequence: str, repo_id: str | None
     return archive, config
 
 
+def resolve_input_files(cfg: dict) -> tuple[Path, Path, str]:
+    """Resolve explicit EgoHTR-format input paths, or the legacy sequence layout.
+
+    Explicit paths may have arbitrary filenames/locations. The NPZ content still
+    needs the EgoHTR array keys consumed by the evaluation pipeline.
+    """
+    input_cfg = cfg.get("input") or {}
+    explicit_npz = input_cfg.get("sequence_npz")
+    explicit_yaml = input_cfg.get("sequence_config")
+    if explicit_npz is not None or explicit_yaml is not None:
+        if not explicit_npz or not explicit_yaml:
+            raise ValueError("Set both input.sequence_npz and input.sequence_config")
+        npz = Path(os.path.expandvars(os.path.expanduser(str(explicit_npz)))).resolve()
+        seq_yaml = Path(os.path.expandvars(os.path.expanduser(str(explicit_yaml)))).resolve()
+        for path in (npz, seq_yaml):
+            if not path.is_file():
+                raise FileNotFoundError(f"Configured input file does not exist: {path}")
+        return npz, seq_yaml, str(cfg.get("sequence") or npz.stem)
+
+    if not cfg.get("dataset_root") or not cfg.get("sequence"):
+        raise ValueError(
+            "Specify input.sequence_npz and input.sequence_config, or legacy dataset_root and sequence"
+        )
+    root = Path(os.path.expandvars(os.path.expanduser(str(cfg["dataset_root"])))).resolve()
+    sequence = str(cfg["sequence"])
+    npz, seq_yaml = ensure_sequence_files(root, sequence, cfg.get("huggingface_repo_id"))
+    return npz, seq_yaml, sequence
+
+
 def list_npz_keys(path: Path) -> set[str]:
     with zipfile.ZipFile(path) as zf:
         return {Path(n).stem for n in zf.namelist() if n.endswith(".npy")}
